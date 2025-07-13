@@ -89,3 +89,48 @@ func Login(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "failed to encode response", http.StatusInternalServerError)
 	}
 }
+func RefreshToken(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		RefreshToken string `json:"refresh_token" validate:"required"`
+		AccessToken  string `json:"access_token" validate:"required"` // Expired access token (to get role)
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request", http.StatusBadRequest)
+		return
+	}
+
+	// validate expired jwt
+	userID, role, err := utils.ValidateExpiredAccessJWT(req.AccessToken)
+	if err != nil {
+		log.Println("access token", err.Error())
+		http.Error(w, "invalid access token", http.StatusUnauthorized)
+		return
+	}
+
+	_, err = utils.ValidateRefreshJWT(req.RefreshToken)
+	if err != nil {
+		log.Println("refresh token", err.Error())
+		http.Error(w, "invalid refresh token", http.StatusUnauthorized)
+		return
+	}
+
+	newAccessToken, err := utils.GenerateAccessJWT(userID, role)
+	if err != nil {
+		http.Error(w, "Failed to generate new access token", http.StatusInternalServerError)
+		return
+	}
+
+	newRefreshToken, err := utils.GenerateRefreshJWT(userID)
+	if err != nil {
+		http.Error(w, "Failed to generate new refresh token", http.StatusInternalServerError)
+		return
+	}
+
+	resp := models.TokenResponse{
+		AccessToken:  newAccessToken,
+		RefreshToken: newRefreshToken, // no rotation
+	}
+
+	json.NewEncoder(w).Encode(resp)
+}

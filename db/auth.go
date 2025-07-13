@@ -2,6 +2,7 @@ package db
 
 import (
 	"database/sql"
+	"log"
 	"storex/models"
 )
 
@@ -26,15 +27,14 @@ func CreateRole(tx *sql.Tx, userID string, role string) error {
 }
 
 func IsUserExist(email string) (bool, error) {
-
-	err := DB.QueryRow(`
-SELECT id FROM users WHERE email = $1 AND archived_at IS NULL`, email).Scan()
-
+	log.Println(email)
+	rows, err := DB.Query(`
+SELECT id FROM users WHERE email = $1 AND archived_at IS NULL`, email)
 	if err != nil {
 		return false, err
 	}
-
-	return true, nil
+	defer rows.Close()
+	return rows.Next(), nil
 }
 
 func GetUserDetails(user *models.User) error {

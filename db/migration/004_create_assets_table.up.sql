@@ -4,7 +4,7 @@ CREATE TABLE IF NOT EXISTS assets  (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     model_id UUID REFERENCES asset_models(id) NOT NULL,
     specs_id UUID NOT NULL,
-    serial_no TEXT NOT NULL,
+    serial_no TEXT UNIQUE NOT NULL,
     owned_by owner_type NOT NULL,
     purchased_date TIMESTAMPTZ NOT NULL,
     warranty_start_date TIMESTAMPTZ,

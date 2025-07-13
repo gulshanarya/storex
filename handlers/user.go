@@ -1,35 +1,56 @@
 package handlers
 
 import (
-	"database/sql"
-	"errors"
+	"github.com/go-chi/chi/v5"
 	"log"
 	"net/http"
 	"storex/db"
 	"storex/middleware"
 	"storex/models"
 	"storex/utils"
+	"strconv"
 	"strings"
 )
 
 func ListUsers(w http.ResponseWriter, r *http.Request) {
-	users, err := db.ListUsers()
+
+	limit, err := strconv.Atoi(r.URL.Query().Get("limit"))
 	if err != nil {
-		http.Error(w, "failed in getting users", http.StatusInternalServerError)
+		http.Error(w, "limit is not a number", http.StatusBadRequest)
+		return
+	}
+	offset, err := strconv.Atoi(r.URL.Query().Get("offset"))
+	if err != nil {
+		http.Error(w, "offset is not a number", http.StatusBadRequest)
+		return
+	}
+
+	// Parse query params
+	params := models.UserFilterParams{
+		Search:      r.URL.Query().Get("search"),
+		UserType:    r.URL.Query().Get("user_type"),
+		AssetStatus: r.URL.Query().Get("status"),
+		Role:        r.URL.Query().Get("role"),
+		Limit:       limit,
+		Offset:      offset,
+	}
+
+	users, err := db.ListUsers(&params)
+	if err != nil {
+		log.Println(err.Error())
+		http.Error(w, "failed to list users", http.StatusInternalServerError)
+		return
+	}
+
+	if len(users) == 0 {
+		http.Error(w, "no users found", http.StatusNotFound)
+		return
 	}
 
 	json.NewEncoder(w).Encode(users)
 }
 
-func IsValidPhone(phone string) bool {
-	if len(phone) == 10 {
-		return true
-	}
-	return false
-}
-
 func CreateUser(w http.ResponseWriter, r *http.Request) {
-
 	var user models.User
 	err := json.NewDecoder(r.Body).Decode(&user)
 	if err != nil {
@@ -52,7 +73,12 @@ func CreateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if user.Phone.Valid && !IsValidPhone(user.Phone.String) {
+	//setting empty string as nil
+	if user.Phone != nil && strings.TrimSpace(*user.Phone) == "" {
+		user.Phone = nil
+	}
+
+	if user.Phone != nil && !utils.IsValidPhone(*user.Phone) {
 		http.Error(w, "invalid phone", http.StatusBadRequest)
 		return
 	}
@@ -75,11 +101,13 @@ func CreateUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	isUserExist, err := db.IsUserExist(user.Email)
+	if err != nil {
+		http.Error(w, "failed in checking user existence", http.StatusInternalServerError)
+		return
+	}
+
 	if isUserExist {
 		http.Error(w, "user with this email already exists", http.StatusInternalServerError)
-		return
-	} else if !errors.Is(err, sql.ErrNoRows) {
-		http.Error(w, "failed in checking user", http.StatusInternalServerError)
 		return
 	}
 
@@ -126,12 +154,47 @@ func CreateUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func UpdateUser(w http.ResponseWriter, r *http.Request) {
-	var user models.User
-	err := json.NewDecoder(r.Body).Decode(&user)
-	if err != nil {
-		http.Error(w, "invalid json body", http.StatusBadRequest)
+	userID := chi.URLParam(r, "user_id")
+	if userID == "" {
+		http.Error(w, "Missing user ID", http.StatusBadRequest)
 		return
 	}
-	if !utils.IsValidEmail(user.Email) {
+
+	var req models.UpdateUserRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
 	}
+
+	// Validate provided fields
+	if req.Email != nil && !utils.IsValidEmail(*req.Email) {
+		http.Error(w, "Invalid email format", http.StatusBadRequest)
+		return
+	}
+	if req.UserType != nil && !utils.IsValidUserType(*req.UserType) {
+		http.Error(w, "Invalid user_type", http.StatusBadRequest)
+		return
+	}
+
+	// Ensure at least one field is being updated
+	if req.Name == nil && req.Email == nil && req.Phone == nil && req.UserType == nil {
+		http.Error(w, "No fields to update", http.StatusBadRequest)
+		return
+	}
+	authUserID := middleware.GetUserID(r)
+	err := db.UpdateUser(authUserID, userID, &req)
+
+	if err != nil {
+		if strings.Contains(err.Error(), "unique") {
+			http.Error(w, "Email or phone already exists", http.StatusConflict)
+			return
+		}
+		log.Println("UpdateUser error:", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{
+		"message": "User updated successfully",
+	})
 }

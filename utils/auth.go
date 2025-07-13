@@ -40,3 +40,10 @@ func IsValidUserType(userType string) bool {
 	}
 	return false
 }
+
+func IsValidPhone(phone string) bool {
+	if len(phone) == 10 {
+		return true
+	}
+	return false
+}

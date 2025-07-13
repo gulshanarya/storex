@@ -4,7 +4,7 @@ CREATE TABLE IF NOT EXISTS users (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name TEXT NOT NULL,
     email TEXT NOT NULL,
-    phone TEXT,
+    phone TEXT UNIQUE,
     user_type user_type NOT NULL DEFAULT 'full_time',
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     created_by UUID REFERENCES users(id),

@@ -25,7 +25,7 @@ func AuthMiddleware() func(http.Handler) http.Handler {
 
 			// userID, err := jwt_utils.ValidateJWT(token)
 
-			userID, role, err := utils.ValidateJWT(token)
+			userID, role, err := utils.ValidateAccessJWT(token)
 			if err != nil {
 				fmt.Println(err.Error())
 				http.Error(w, "unauthorized", http.StatusUnauthorized)
