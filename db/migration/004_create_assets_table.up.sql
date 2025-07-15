@@ -16,3 +16,6 @@ CREATE TABLE IF NOT EXISTS assets  (
     archived_at TIMESTAMPTZ,
     archived_by UUID REFERENCES users(id)
 );
+
+CREATE INDEX idx_assets_lower_serial_no ON assets(LOWER(serial_no));
+CREATE INDEX idx_assets_owned_by ON assets(owned_by);

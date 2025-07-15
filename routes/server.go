@@ -10,11 +10,6 @@ import (
 func Routes(r chi.Router) {
 	r.Route("/api", func(api chi.Router) {
 		AuthRoutes(api)
-		//RegisterUserRoutes(api)
-		//RegisterAssetRoutes(api)
-		//RegisterStatusRoutes(api)
-		//RegisterServiceRoutes(api)
-
 		UsersRoutes(api)
 		AssetsRoutes(api)
 	})
@@ -28,27 +23,29 @@ func AuthRoutes(r chi.Router) {
 	})
 }
 
-func UsersRoutes(r chi.Router) { //routes for reading here
+func UsersRoutes(r chi.Router) {
 	r.Route("/users", func(users chi.Router) {
 		users.Use(middleware.AuthMiddleware())
+		//users.Get("/{user_id}", handlers.GetAssetsByUser)
 		users.Use(middleware.RequireRoles("admin", "employee_manager"))
 		users.Get("/", handlers.ListUsers)
 		users.Post("/", handlers.CreateUser)
 		users.Patch("/{user_id}", handlers.UpdateUser)
-
+		users.Delete("/{user_id}", handlers.DeleteUser)
 	})
-
 }
 
-func AssetsRoutes(r chi.Router) { //routes for reading here
+func AssetsRoutes(r chi.Router) {
 	r.Route("/asset", func(asset chi.Router) {
 		asset.Use(middleware.AuthMiddleware())
 		asset.Use(middleware.RequireRoles("admin", "asset_manager"))
-		//asset.Get("/", handlers.ListUsers)
 		asset.Post("/", handlers.CreateAsset)
 		asset.Get("/", handlers.ListAssets)
-		//asset.Patch("/{user_id}", handlers.UpdateUser)
-
+		asset.Patch("/{id}", handlers.UpdateAsset)
+		asset.Post("/assign", handlers.AssignAsset)
+		asset.Patch("/retrieve/{asset_id}", handlers.RetrieveAsset)
+		asset.Get("/timeline", handlers.AssetTimeline)
+		asset.Get("/user/timeline", handlers.UserAssetTimeline)
 	})
 
 }

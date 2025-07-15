@@ -3,9 +3,12 @@ package db
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"storex/models"
+	"strings"
+	"time"
 )
 
 func GetOrCreateModel(tx *sql.Tx, brandID string, req *models.CreateModelRequest) (string, error) {
@@ -281,7 +284,10 @@ func ListAssets(params *models.ListAssetsQueryParams) ([]models.ListAssetsRespon
 		argIndex++
 	}
 
-	query += " ORDER BY a.created_at DESC"
+	query += ` ORDER BY a.created_at DESC
+	LIMIT $` + fmt.Sprint(argIndex) + ` OFFSET $` + fmt.Sprint(argIndex+1)
+
+	args = append(args, params.Limit, params.Offset)
 
 	// Execute query
 	rows, err := DB.Query(query, args...)
@@ -304,4 +310,314 @@ func ListAssets(params *models.ListAssetsQueryParams) ([]models.ListAssetsRespon
 	}
 
 	return assets, nil
+}
+
+func GetAssetWithModel(assetID string) (*models.AssetWithModel, error) {
+	query := `
+		SELECT
+			a.id,
+			a.model_id,
+			a.specs_id,
+			a.serial_no,
+			a.owned_by,
+			a.purchased_date,
+			a.warranty_start_date,
+			a.warranty_exp_date,
+			m.asset_type
+		FROM assets a
+		JOIN asset_models m ON a.model_id = m.id
+		WHERE a.id = $1 AND a.archived_at IS NULL
+	`
+
+	var asset models.AssetWithModel
+	err := DB.QueryRow(query, assetID).Scan(
+		&asset.ID,
+		&asset.ModelID,
+		&asset.SpecsID,
+		&asset.SerialNo,
+		&asset.OwnedBy,
+		&asset.PurchasedDate,
+		&asset.WarrantyStartDate,
+		&asset.WarrantyExpDate,
+		&asset.AssetType,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	return &asset, nil
+}
+
+func UpdateAsset(tx *sql.Tx, req *models.UpdateAssetRequest, assetID string, userID string) error {
+	// Dynamically build asset update query
+	setClauses := []string{}
+	args := []interface{}{}
+	argID := 1
+
+	if req.SerialNo != nil {
+		setClauses = append(setClauses, fmt.Sprintf("serial_no = $%d", argID))
+		args = append(args, *req.SerialNo)
+		argID++
+	}
+
+	if req.OwnedBy != nil {
+		setClauses = append(setClauses, fmt.Sprintf("owned_by = $%d", argID))
+		args = append(args, *req.OwnedBy)
+		argID++
+	}
+
+	if req.PurchasedDate != nil {
+		setClauses = append(setClauses, fmt.Sprintf("purchased_date = $%d", argID))
+		args = append(args, *req.PurchasedDate)
+		argID++
+	}
+
+	if req.WarrantyStartDate != nil {
+		setClauses = append(setClauses, fmt.Sprintf("warranty_start_date = $%d", argID))
+		args = append(args, *req.WarrantyStartDate)
+		argID++
+	}
+
+	if req.WarrantyExpDate != nil {
+		setClauses = append(setClauses, fmt.Sprintf("warranty_exp_date = $%d", argID))
+		args = append(args, *req.WarrantyExpDate)
+		argID++
+	}
+
+	// Add updated_by and updated_at
+	setClauses = append(setClauses,
+		fmt.Sprintf("updated_by = $%d", argID),
+		fmt.Sprintf("updated_at = $%d", argID+1),
+	)
+	args = append(args, userID, time.Now())
+	argID += 2
+
+	// Finalize query
+	if len(setClauses) > 0 {
+		query := fmt.Sprintf(`
+			UPDATE assets SET %s WHERE id = $%d
+		`, strings.Join(setClauses, ", "), argID)
+		args = append(args, assetID)
+
+		if _, err := tx.Exec(query, args...); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func UpdateSpecsByType(tx *sql.Tx, assetType string, specsID string, specs interface{}) error {
+	// Re-marshal into JSON
+	specsBytes, err := json.Marshal(specs)
+	if err != nil {
+		return fmt.Errorf("failed to re-marshal specs: %w", err)
+	}
+	switch assetType {
+	case "laptop":
+		var s models.LaptopSpecsUpdate
+		if err := json.Unmarshal(specsBytes, &s); err != nil {
+			return fmt.Errorf("failed to unmarshal laptop specs: %w", err)
+		}
+		return UpdateLaptopSpecsByID(tx, specsID, &s)
+
+	case "mouse":
+		var s models.MouseSpecsUpdate
+		if err := json.Unmarshal(specsBytes, &s); err != nil {
+			return fmt.Errorf("failed to unmarshal specs: %w", err)
+		}
+		return UpdateMouseSpecsByID(tx, specsID, &s)
+
+	case "monitor":
+		var s models.MonitorSpecsUpdate
+		if err := json.Unmarshal(specsBytes, &s); err != nil {
+			return fmt.Errorf("failed to unmarshal specs: %w", err)
+		}
+		return UpdateMonitorSpecsByID(tx, specsID, &s)
+
+	case "mobile":
+		var s models.MobileSpecsUpdate
+		if err := json.Unmarshal(specsBytes, &s); err != nil {
+			return fmt.Errorf("failed to unmarshal specs: %w", err)
+		}
+		return UpdateMobileSpecsByID(tx, specsID, &s)
+
+	case "sim":
+		var s models.SIMSpecsUpdate
+		if err := json.Unmarshal(specsBytes, &s); err != nil {
+			return fmt.Errorf("failed to unmarshal specs: %w", err)
+		}
+		return UpdateSIMSpecsByID(tx, specsID, &s)
+
+	case "hard_disk":
+		var s models.HardDiskSpecsUpdate
+		if err := json.Unmarshal(specsBytes, &s); err != nil {
+			return fmt.Errorf("failed to unmarshal specs: %w", err)
+		}
+		return UpdateHardDiskSpecsByID(tx, specsID, &s)
+
+	case "pen_drive":
+		var s models.PenDriveSpecsUpdate
+		if err := json.Unmarshal(specsBytes, &s); err != nil {
+			return fmt.Errorf("failed to unmarshal specs: %w", err)
+		}
+		return UpdatePenDriveSpecsByID(tx, specsID, &s)
+
+	case "accessories":
+		var s models.AccessorySpecsUpdate
+		if err := json.Unmarshal(specsBytes, &s); err != nil {
+			return fmt.Errorf("failed to unmarshal specs: %w", err)
+		}
+		return UpdateAccessorySpecsByID(tx, specsID, &s)
+
+	default:
+		return errors.New("unsupported asset type: " + assetType)
+	}
+}
+
+func buildSpecsUpdateSQL(tx *sql.Tx, table string, id string, fields map[string]interface{}) error {
+	var sets []string
+	var args []interface{}
+	argPos := 1
+
+	for col, val := range fields {
+		if val != nil {
+			sets = append(sets, fmt.Sprintf("%s = COALESCE($%d, %s)", col, argPos, col))
+			args = append(args, val)
+			argPos++
+		}
+	}
+
+	if len(sets) == 0 {
+		return nil // no updates
+	}
+
+	args = append(args, id)
+	query := fmt.Sprintf("UPDATE %s SET %s WHERE id = $%d", table, strings.Join(sets, ", "), argPos)
+	log.Println(sets, args)
+	_, err := tx.Exec(query, args...)
+	return err
+}
+
+func IsAssetAvailable(tx *sql.Tx, assetID string) (bool, error) {
+	query := `SELECT COUNT(*) FROM asset_status WHERE asset_id = $1 AND status = 'assigned' AND archived_at IS NULL`
+	var count int
+	err := tx.QueryRow(query, assetID).Scan(&count)
+	if err != nil {
+		return false, err
+	}
+	return count == 0, nil
+}
+
+func InsertAssetStatusToUser(tx *sql.Tx, status *models.AssignAssetRequest) error {
+	query := `INSERT INTO asset_status (asset_id, status, assigned_to_user) VALUES ($1, $2, $3)`
+	_, err := tx.Exec(query, status.AssetID, "assigned", status.UserID)
+	return err
+}
+
+func GetActiveAssignedStatusID(tx *sql.Tx, assetID string) (string, error) {
+	query := `SELECT id FROM asset_status WHERE asset_id = $1 AND status = 'assigned' AND archived_at IS NULL`
+	var id string
+	err := tx.QueryRow(query, assetID).Scan(&id)
+	if err == sql.ErrNoRows {
+		return "", errors.New("No active assignment found for asset")
+	} else if err != nil {
+		return "", err
+	}
+	return id, nil
+}
+
+func ArchiveAssetStatus(tx *sql.Tx, statusID string) error {
+	query := `UPDATE asset_status SET archived_at = NOW() WHERE id = $1`
+	_, err := tx.Exec(query, statusID)
+	return err
+}
+
+func FetchAssetTimeline(assetID string) ([]models.AssetTimeline, error) {
+	query := `
+		SELECT status, assigned_to_user, sent_to_service, created_at, archived_at
+		FROM asset_status
+		WHERE asset_id = $1
+		ORDER BY created_at ASC
+	`
+
+	rows, err := DB.Query(query, assetID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var timeline []models.AssetTimeline
+	for rows.Next() {
+		var t models.AssetTimeline
+		var assignedTo sql.NullString
+		var sentToService sql.NullString
+		var archivedAt sql.NullTime
+		if err := rows.Scan(&t.Status, &assignedTo, &sentToService, &t.CreatedAt, &archivedAt); err != nil {
+			return nil, err
+		}
+		if assignedTo.Valid {
+			t.AssignedToUser = &assignedTo.String
+		}
+		if sentToService.Valid {
+			t.SentToService = &sentToService.String
+		}
+		if archivedAt.Valid {
+			t.ArchivedAt = &archivedAt.Time
+		}
+		timeline = append(timeline, t)
+	}
+	return timeline, nil
+}
+
+func FetchUserAssetTimeline(userID string) ([]models.AssetTimeline, error) {
+	//sent_to_service redundant remove later
+	query := `
+		SELECT status, asset_id, sent_to_service, created_at, archived_at
+		FROM asset_status
+		WHERE assigned_to_user = $1
+		ORDER BY created_at ASC
+	`
+
+	rows, err := DB.Query(query, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var timeline []models.AssetTimeline
+	for rows.Next() {
+		var t models.AssetTimeline
+		var assetID string
+		var sentToService sql.NullString
+		var archivedAt sql.NullTime
+		if err := rows.Scan(&t.Status, &assetID, &sentToService, &t.CreatedAt, &archivedAt); err != nil {
+			return nil, err
+		}
+		t.AssignedToUser = &userID
+		if sentToService.Valid {
+			t.SentToService = &sentToService.String
+		}
+		if archivedAt.Valid {
+			t.ArchivedAt = &archivedAt.Time
+		}
+		timeline = append(timeline, t)
+	}
+	return timeline, nil
+}
+
+func NumberOfAssetsAssigned(tx *sql.Tx, userID string) (int, error) {
+	assignedCount := 0
+	err := tx.QueryRow(`
+		SELECT COUNT(*) FROM asset_status
+		WHERE assigned_to_user = $1 AND archived_at IS NULL
+	`, userID).Scan(&assignedCount)
+
+	if err != nil {
+		return 0, err
+	}
+	return assignedCount, nil
 }

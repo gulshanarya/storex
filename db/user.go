@@ -7,12 +7,13 @@ import (
 	"storex/models"
 )
 
-func ListUsers(filters *models.UserFilterParams) ([]models.UserDetails, error) {
+func ListUsers(filters *models.UserFilterParams) ([]models.ListUsersResponse, error) {
 	query := `
     SELECT
         u.id,
         u.name,
         u.email,
+        u.phone,
         u.user_type,
         COALESCE(array_agg(ur.role) FILTER (WHERE ur.role IS NOT NULL), '{}') AS roles,
         COUNT(DISTINCT s.id) FILTER (
@@ -30,9 +31,9 @@ func ListUsers(filters *models.UserFilterParams) ([]models.UserDetails, error) {
 	argIndex := 1
 
 	if filters.Search != "" {
-		query += fmt.Sprintf(" AND (LOWER(u.name) LIKE LOWER($%d) OR LOWER(u.email) LIKE LOWER($%d))", argIndex, argIndex+1)
-		args = append(args, "%"+filters.Search+"%", "%"+filters.Search+"%")
-		argIndex += 2
+		query += fmt.Sprintf(" AND (u.name ILIKE $%d OR u.email ILIKE $%d OR u.phone ILIKE $%d)", argIndex, argIndex+1, argIndex+2)
+		args = append(args, "%"+filters.Search+"%", "%"+filters.Search+"%", "%"+filters.Search+"%")
+		argIndex += 3
 	}
 
 	if filters.UserType != "" {
@@ -65,11 +66,11 @@ func ListUsers(filters *models.UserFilterParams) ([]models.UserDetails, error) {
 	}
 	defer rows.Close()
 
-	var users []models.UserDetails
+	var users []models.ListUsersResponse
 	for rows.Next() {
-		var u models.UserDetails
+		var u models.ListUsersResponse
 		var roles []sql.NullString
-		err := rows.Scan(&u.ID, &u.Name, &u.Email, &u.UserType, pq.Array(&roles), &u.AssignedAssetCount)
+		err := rows.Scan(&u.ID, &u.Name, &u.Email, &u.Phone, &u.UserType, pq.Array(&roles), &u.AssignedAssetCount)
 		if err != nil {
 			return nil, err
 		}
@@ -84,54 +85,6 @@ func ListUsers(filters *models.UserFilterParams) ([]models.UserDetails, error) {
 	}
 	return users, nil
 }
-
-//func ListUsers() ([]models.UserDetails, error) {
-//	query := `
-//    SELECT
-//        u.id,
-//        u.name,
-//        u.email,
-//        u.user_type,
-//        COALESCE(array_agg(ur.role) FILTER (WHERE ur.role IS NOT NULL), '{}') AS roles,
-//        COUNT(DISTINCT s.id) FILTER (
-//            WHERE s.status = 'assigned'
-//            AND s.assigned_to_user = u.id
-//            AND s.archived_at IS NULL
-//        ) AS assigned_asset_count
-//    FROM users u
-//    LEFT JOIN user_roles ur ON ur.user_id = u.id
-//    LEFT JOIN asset_status s ON s.assigned_to_user = u.id
-//        AND s.status = 'assigned' AND s.archived_at IS NULL
-//    WHERE u.archived_at IS NULL
-//    GROUP BY u.id
-//    ORDER BY u.name;
-//    `
-//
-//	rows, err := DB.Query(query)
-//	if err != nil {
-//		return nil, err
-//	}
-//	defer rows.Close()
-//
-//	var users []models.UserDetails
-//	for rows.Next() {
-//		var u models.UserDetails
-//		var roles []sql.NullString
-//		err := rows.Scan(&u.ID, &u.Name, &u.Email, &u.UserType, pq.Array(&roles), &u.AssignedAssetCount)
-//		if err != nil {
-//			return nil, err
-//		}
-//
-//		for _, r := range roles {
-//			if r.Valid {
-//				u.Roles = append(u.Roles, r.String)
-//			}
-//		}
-//
-//		users = append(users, u)
-//	}
-//	return users, nil
-//}
 
 func CreateProtectedUser(tx *sql.Tx, user *models.User) (string, error) {
 	var userID string
@@ -164,6 +117,17 @@ func UpdateUser(authUserID string, userID string, req *models.UpdateUserRequest)
 		authUserID,
 		userID,
 	)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func SoftDeleteUser(tx *sql.Tx, userID string) error {
+	_, err := tx.Exec(`
+		UPDATE users SET archived_at = NOW() WHERE id = $1 AND archived_at IS NULL
+	`, userID)
+
 	if err != nil {
 		return err
 	}

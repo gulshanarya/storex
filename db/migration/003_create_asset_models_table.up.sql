@@ -7,3 +7,4 @@ CREATE TABLE IF NOT EXISTS asset_models (
 );
 
 CREATE UNIQUE INDEX ON asset_models (LOWER(name), brand_id);
+CREATE INDEX idx_asset_type ON asset_models(asset_type);

@@ -19,10 +19,17 @@ func ListUsers(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "limit is not a number", http.StatusBadRequest)
 		return
 	}
-	offset, err := strconv.Atoi(r.URL.Query().Get("offset"))
+	page, err := strconv.Atoi(r.URL.Query().Get("page"))
 	if err != nil {
-		http.Error(w, "offset is not a number", http.StatusBadRequest)
+		http.Error(w, "page is not a number", http.StatusBadRequest)
 		return
+	}
+
+	if page < 1 {
+		page = 1
+	}
+	if limit < 1 || limit > 100 {
+		limit = 10
 	}
 
 	// Parse query params
@@ -32,9 +39,10 @@ func ListUsers(w http.ResponseWriter, r *http.Request) {
 		AssetStatus: r.URL.Query().Get("status"),
 		Role:        r.URL.Query().Get("role"),
 		Limit:       limit,
-		Offset:      offset,
+		Offset:      (page - 1) * limit,
 	}
 
+	//later will add multiple filter of a type
 	users, err := db.ListUsers(&params)
 	if err != nil {
 		log.Println(err.Error())
@@ -91,7 +99,7 @@ func CreateUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if creatorRole == "employee_manager" && user.Role != "employee" {
-		http.Error(w, "Employee managers can only create employees", http.StatusForbidden)
+		http.Error(w, "employee managers can only create employees", http.StatusForbidden)
 		return
 	}
 
@@ -197,4 +205,35 @@ func UpdateUser(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{
 		"message": "User updated successfully",
 	})
+}
+
+func DeleteUser(w http.ResponseWriter, r *http.Request) {
+	userID := chi.URLParam(r, "user_id")
+
+	tx, err := db.DB.Begin()
+	if err != nil {
+		http.Error(w, "failed to begin transaction", http.StatusInternalServerError)
+		return
+	}
+	defer db.TxFinalizer(tx, &err)
+
+	// Check if user is assigned any assets
+	assignedCount, err := db.NumberOfAssetsAssigned(tx, userID)
+	if err != nil {
+		http.Error(w, "failed to check user assignment", http.StatusInternalServerError)
+		return
+	}
+	if assignedCount > 0 {
+		http.Error(w, "user cannot be deleted while assets are assigned", http.StatusBadRequest)
+		return
+	}
+
+	// Soft delete user
+	err = db.SoftDeleteUser(tx, userID)
+	if err != nil {
+		http.Error(w, "failed to archive user", http.StatusInternalServerError)
+		return
+	}
+
+	w.Write([]byte("user deleted successfully"))
 }

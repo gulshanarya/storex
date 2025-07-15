@@ -14,4 +14,11 @@ CREATE TABLE IF NOT EXISTS users (
     archived_by UUID REFERENCES users(id)
 );
 
+-- indexes for text search
 CREATE UNIQUE INDEX IF NOT EXISTS uniq_active_emails ON users(TRIM(LOWER(email))) WHERE archived_at IS NULL;
+CREATE INDEX idx_users_lower_name ON users(LOWER(name));
+CREATE INDEX idx_user_phone ON users(phone)
+
+-- Index for filtering user_type
+CREATE INDEX idx_users_user_type ON users(user_type);
+

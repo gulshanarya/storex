@@ -11,3 +11,12 @@ CREATE TABLE IF NOT EXISTS asset_status (
 
 CREATE UNIQUE INDEX uniq_current_asset_status ON asset_status(asset_id)
     WHERE archived_at IS NULL;
+
+CREATE INDEX idx_asset_status_assetid_status_active
+    ON asset_status(asset_id, status)
+    WHERE archived_at IS NULL;
+
+
+CREATE INDEX idx_asset_status_user_status_active
+    ON asset_status(assigned_to_user, status)
+    WHERE archived_at IS NULL;
