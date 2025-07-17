@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/lib/pq"
 	"log"
 	"storex/models"
 	"strings"
@@ -264,22 +265,22 @@ func ListAssets(params *models.ListAssetsQueryParams) ([]models.ListAssetsRespon
 	}
 
 	// Filter asset_type
-	if params.AssetType != "" {
-		query += fmt.Sprintf(" AND m.asset_type = $%d", argIndex)
-		args = append(args, params.AssetType)
+	if len(params.AssetTypes) > 0 {
+		query += fmt.Sprintf(" AND m.asset_type = ANY($%d)", argIndex)
+		args = append(args, pq.Array(params.AssetTypes))
 		argIndex++
 	}
 
 	// Filter status
-	if params.Status != "" {
-		query += fmt.Sprintf(" AND s.status = $%d", argIndex)
-		args = append(args, params.Status)
+	if len(params.Status) > 0 {
+		query += fmt.Sprintf(" AND s.status = ANY($%d)", argIndex)
+		args = append(args, pq.Array(params.Status))
 		argIndex++
 	}
 
 	// Filter owned_by
-	if params.OwnedBy != "" {
-		query += fmt.Sprintf(" AND a.owned_by = $%d", argIndex)
+	if len(params.OwnedBy) > 0 {
+		query += fmt.Sprintf(" AND a.owned_by = ANY($%d)", argIndex)
 		args = append(args, params.OwnedBy)
 		argIndex++
 	}
@@ -620,4 +621,32 @@ func NumberOfAssetsAssigned(tx *sql.Tx, userID string) (int, error) {
 		return 0, err
 	}
 	return assignedCount, nil
+}
+
+func GetAllAssetsByUser(userID string, user *models.UserDetails) error {
+	// Fetch detailed assigned assets
+	assetQuery := `
+		SELECT a.id, am.name, ab.name, ast.status, ast.created_at
+		FROM asset_status ast
+		JOIN assets a ON a.id = ast.asset_id
+		JOIN asset_models am ON am.id = a.model_id
+		JOIN asset_brands ab ON ab.id = am.brand_id
+		WHERE ast.assigned_to_user = $1 AND ast.archived_at IS NULL
+	`
+
+	rows, err := DB.Query(assetQuery, userID)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var asset models.AssignedAsset
+		err := rows.Scan(&asset.AssetID, &asset.ModelName, &asset.BrandName, &asset.Status, &asset.AssignedAt)
+		if err != nil {
+			return err
+		}
+		user.AssignedAssets = append(user.AssignedAssets, asset)
+	}
+	return nil
 }

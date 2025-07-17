@@ -19,19 +19,26 @@ func AuthRoutes(r chi.Router) {
 	r = r.Route("/auth", func(auth chi.Router) {
 		auth.Post("/login", handlers.Login)
 		auth.Get("/refresh_token", handlers.RefreshToken)
-
 	})
 }
 
 func UsersRoutes(r chi.Router) {
 	r.Route("/users", func(users chi.Router) {
 		users.Use(middleware.AuthMiddleware())
-		//users.Get("/{user_id}", handlers.GetAssetsByUser)
-		users.Use(middleware.RequireRoles("admin", "employee_manager"))
-		users.Get("/", handlers.ListUsers)
-		users.Post("/", handlers.CreateUser)
-		users.Patch("/{user_id}", handlers.UpdateUser)
-		users.Delete("/{user_id}", handlers.DeleteUser)
+
+		// Routes needing only AuthMiddleware
+		users.Group(func(authOnly chi.Router) {
+			authOnly.Get("/{user_id}", handlers.GetUserDashboard)
+		})
+
+		// Routes needing Auth + Role Middleware
+		users.Group(func(roleRoutes chi.Router) {
+			roleRoutes.Use(middleware.RequireRoles("admin", "employee_manager"))
+			roleRoutes.Get("/", handlers.ListUsers)
+			roleRoutes.Post("/", handlers.CreateUser)
+			roleRoutes.Patch("/{user_id}", handlers.UpdateUser)
+			roleRoutes.Delete("/{user_id}", handlers.DeleteUser)
+		})
 	})
 }
 

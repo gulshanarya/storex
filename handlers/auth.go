@@ -39,9 +39,9 @@ func Login(w http.ResponseWriter, r *http.Request) {
 		name := utils.ExtractNameFromEmail(user.Email)
 		fullName := strings.Split(name, ".")
 
-		for _, name := range fullName {
-			user.Name += name
-		}
+		//for _, name := range fullName {
+		user.Name = fullName[0] + " " + fullName[1]
+		//}
 
 		userID, err := db.CreateUser(tx, &user)
 

@@ -32,12 +32,23 @@ func ListUsers(w http.ResponseWriter, r *http.Request) {
 		limit = 10
 	}
 
+	parseMulti := func(param string) []string {
+		values := strings.Split(r.URL.Query().Get(param), ",")
+		var cleaned []string
+		for _, v := range values {
+			if trimmed := strings.TrimSpace(v); trimmed != "" {
+				cleaned = append(cleaned, trimmed)
+			}
+		}
+		return cleaned
+	}
+
 	// Parse query params
 	params := models.UserFilterParams{
 		Search:      r.URL.Query().Get("search"),
-		UserType:    r.URL.Query().Get("user_type"),
-		AssetStatus: r.URL.Query().Get("status"),
-		Role:        r.URL.Query().Get("role"),
+		UserTypes:   parseMulti("user_type"),
+		AssetStatus: parseMulti("status"),
+		Roles:       parseMulti("role"),
 		Limit:       limit,
 		Offset:      (page - 1) * limit,
 	}

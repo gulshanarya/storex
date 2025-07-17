@@ -60,6 +60,3 @@ CREATE TABLE accessory_specs (
 
 
 
-
-
-

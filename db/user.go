@@ -36,29 +36,57 @@ func ListUsers(filters *models.UserFilterParams) ([]models.ListUsersResponse, er
 		argIndex += 3
 	}
 
-	if filters.UserType != "" {
-		query += fmt.Sprintf(" AND u.user_type = $%d", argIndex)
-		args = append(args, filters.UserType)
+	if len(filters.UserTypes) > 0 {
+		query += fmt.Sprintf(" AND u.user_type = ANY($%d)", argIndex)
+		args = append(args, pq.Array(filters.UserTypes))
 		argIndex++
 	}
+	//if filters.UserType != "" {
+	//	query += fmt.Sprintf(" AND u.user_type = $%d", argIndex)
+	//	args = append(args, filters.UserType)
+	//	argIndex++
+	//}
 
-	if filters.Role != "" {
-		query += fmt.Sprintf(" AND EXISTS (SELECT 1 FROM user_roles ur2 WHERE ur2.user_id = u.id AND ur2.role = $%d)", argIndex)
-		args = append(args, filters.Role)
+	if len(filters.Roles) > 0 {
+		query += fmt.Sprintf(" AND EXISTS (SELECT 1 FROM user_roles ur2 WHERE ur2.user_id = u.id AND ur2.role = ANY($%d))", argIndex)
+		args = append(args, pq.Array(filters.Roles))
 		argIndex++
 	}
+	//if filters.Role != "" {
+	//	query += fmt.Sprintf(" AND EXISTS (SELECT 1 FROM user_roles ur2 WHERE ur2.user_id = u.id AND ur2.role = $%d)", argIndex)
+	//	args = append(args, filters.Role)
+	//	argIndex++
+	//}
 
-	if filters.AssetStatus != "" {
-		query += fmt.Sprintf(" AND EXISTS (SELECT 1 FROM asset_status s2 WHERE s2.assigned_to_user = u.id AND s2.status = $%d AND s2.archived_at IS NULL)", argIndex)
-		args = append(args, filters.AssetStatus)
+	if len(filters.AssetStatus) > 0 {
+		query += fmt.Sprintf(`
+			AND EXISTS (
+				SELECT 1 FROM asset_status s2
+				WHERE s2.assigned_to_user = u.id
+				AND s2.status = ANY($%d)
+				AND s2.archived_at IS NULL
+			)`, argIndex)
+		args = append(args, pq.Array(filters.AssetStatus))
 		argIndex++
 	}
+	//if filters.AssetStatus != "" {
+	//	query += fmt.Sprintf(" AND EXISTS (SELECT 1 FROM asset_status s2 WHERE s2.assigned_to_user = u.id AND s2.status = $%d AND s2.archived_at IS NULL)", argIndex)
+	//	args = append(args, filters.AssetStatus)
+	//	argIndex++
+	//}
 
-	query += `
-    GROUP BY u.id
-    ORDER BY u.name
-    LIMIT $` + fmt.Sprint(argIndex) + ` OFFSET $` + fmt.Sprint(argIndex+1)
+	query += fmt.Sprintf(`
+	GROUP BY u.id
+	ORDER BY u.name
+	LIMIT $%d OFFSET $%d
+	`, argIndex, argIndex+1)
+
 	args = append(args, filters.Limit, filters.Offset)
+	//query += `
+	//GROUP BY u.id
+	//ORDER BY u.name
+	//LIMIT $` + fmt.Sprint(argIndex) + ` OFFSET $` + fmt.Sprint(argIndex+1)
+	//args = append(args, filters.Limit, filters.Offset)
 
 	rows, err := DB.Query(query, args...)
 	if err != nil {
@@ -132,4 +160,36 @@ func SoftDeleteUser(tx *sql.Tx, userID string) error {
 		return err
 	}
 	return nil
+}
+
+func GetUserDetailsByUserID(userID string) (models.UserDetails, error) {
+	query := `
+		SELECT
+			u.id, u.name, u.email, u.user_type,
+			COALESCE(array_agg(DISTINCT ur.role) FILTER (WHERE ur.role IS NOT NULL), '{}') AS roles,
+			COUNT(DISTINCT ast.id) FILTER (
+				WHERE ast.status = 'assigned'
+				AND ast.assigned_to_user = u.id
+				AND ast.archived_at IS NULL
+			) AS assigned_asset_count
+		FROM users u
+		LEFT JOIN user_roles ur ON ur.user_id = u.id
+		LEFT JOIN asset_status ast ON ast.assigned_to_user = u.id
+		WHERE u.id = $1
+		GROUP BY u.id
+	`
+
+	var user models.UserDetails
+	var roles []sql.NullString
+	err := DB.QueryRow(query, userID).Scan(&user.ID, &user.Name, &user.Email, &user.UserType, pq.Array(&roles), &user.AssignedAssetCount)
+	if err != nil {
+		return user, err
+	}
+
+	for _, r := range roles {
+		if r.Valid {
+			user.Roles = append(user.Roles, r.String)
+		}
+	}
+	return user, nil
 }

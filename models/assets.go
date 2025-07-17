@@ -16,12 +16,12 @@ type ListAssetsResponse struct {
 }
 
 type ListAssetsQueryParams struct {
-	Search    string
-	AssetType string
-	Status    string
-	OwnedBy   string
-	Limit     int
-	Offset    int
+	Search     string
+	AssetTypes []string
+	Status     []string
+	OwnedBy    []string
+	Limit      int
+	Offset     int
 }
 
 type CreateAssetRequest struct {

@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"database/sql"
 	"github.com/go-chi/chi/v5"
 	"log"
 	"net/http"
@@ -8,6 +9,7 @@ import (
 	"storex/middleware"
 	"storex/models"
 	"strconv"
+	"strings"
 )
 
 func CreateAsset(w http.ResponseWriter, r *http.Request) {
@@ -95,14 +97,25 @@ func ListAssets(w http.ResponseWriter, r *http.Request) {
 		limit = 10
 	}
 
+	parseMulti := func(param string) []string {
+		values := strings.Split(r.URL.Query().Get(param), ",")
+		var cleaned []string
+		for _, v := range values {
+			if trimmed := strings.TrimSpace(v); trimmed != "" {
+				cleaned = append(cleaned, trimmed)
+			}
+		}
+		return cleaned
+	}
+
 	// Parse query params
 	params := models.ListAssetsQueryParams{
-		Search:    r.URL.Query().Get("search"),
-		AssetType: r.URL.Query().Get("asset_type"),
-		Status:    r.URL.Query().Get("status"),
-		OwnedBy:   r.URL.Query().Get("owned_by"),
-		Limit:     limit,
-		Offset:    (page - 1) * limit,
+		Search:     r.URL.Query().Get("search"),
+		AssetTypes: parseMulti("asset_type"),
+		Status:     parseMulti("status"),
+		OwnedBy:    parseMulti("owned_by"),
+		Limit:      limit,
+		Offset:     (page - 1) * limit,
 	}
 
 	assets, err := db.ListAssets(&params)
@@ -183,6 +196,18 @@ func AssignAsset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer db.TxFinalizer(tx, &err)
+
+	//check if user exists
+	err = db.IsUserExistByID(req.UserID, tx)
+	if err != nil {
+		log.Println(err.Error())
+		if err == sql.ErrNoRows {
+			http.Error(w, "user not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, "error in finding user", http.StatusInternalServerError)
+		return
+	}
 
 	// Check if asset exists and is available
 	isAvailable, err := db.IsAssetAvailable(tx, req.AssetID)
@@ -267,10 +292,30 @@ func UserAssetTimeline(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(timelines)
 }
 
-func GetAssetsByUser(w http.ResponseWriter, r *http.Request) {
+func GetUserDashboard(w http.ResponseWriter, r *http.Request) {
 	userID := chi.URLParam(r, "user_id")
+
 	if userID == "" {
-		http.Error(w, "user id required", http.StatusBadRequest)
+		http.Error(w, "user ID is required", http.StatusBadRequest)
+		return
 	}
 
+	userDetails, err := db.GetUserDetailsByUserID(userID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			http.Error(w, "User not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, "Failed to fetch user info", http.StatusInternalServerError)
+		return
+	}
+
+	err = db.GetAllAssetsByUser(userID, &userDetails)
+	if err != nil {
+		log.Println(err.Error())
+		http.Error(w, "Failed to fetch assigned assets", http.StatusInternalServerError)
+		return
+	}
+
+	json.NewEncoder(w).Encode(userDetails)
 }

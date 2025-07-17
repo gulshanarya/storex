@@ -82,3 +82,12 @@ func UpdateAccessorySpecsByID(tx *sql.Tx, specsID string, specs *models.Accessor
 		"compatible_with": specs.CompatibleWith,
 	})
 }
+
+func IsUserExistByID(userID string, tx *sql.Tx) error {
+	query := `SELECT userID FROM users WHERE id = $1 AND archived_at IS NULL`
+	err := tx.QueryRow(query, userID).Scan(&userID)
+	if err != nil {
+		return err
+	}
+	return nil
+}
