@@ -44,8 +44,8 @@ func GetUserDetails(user *models.User) error {
     ur.role as role_name
 	FROM users u
 	LEFT JOIN user_roles ur ON ur.user_id = u.id
-	WHERE u.email = $1 AND u.archived_at IS NULL;
-`, user.Email).
+	WHERE u.email = $1 AND ur.role = $2 AND u.archived_at IS NULL;
+`, user.Email, user.Role).
 		Scan(&user.Id, &user.Name, &user.Email, &user.Phone, &user.UserType, &user.Role)
 	if err != nil {
 		return err

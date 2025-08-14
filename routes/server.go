@@ -4,7 +4,6 @@ import (
 	"github.com/go-chi/chi/v5"
 	"storex/handlers"
 	"storex/middleware"
-	//"storex/middleware"
 )
 
 func Routes(r chi.Router) {
@@ -28,7 +27,7 @@ func UsersRoutes(r chi.Router) {
 
 		// Routes needing only AuthMiddleware
 		users.Group(func(authOnly chi.Router) {
-			authOnly.Get("/{user_id}", handlers.GetUserDashboard)
+			authOnly.Get("/dashboard", handlers.GetUserDashboard)
 		})
 
 		// Routes needing Auth + Role Middleware

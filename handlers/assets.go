@@ -293,13 +293,7 @@ func UserAssetTimeline(w http.ResponseWriter, r *http.Request) {
 }
 
 func GetUserDashboard(w http.ResponseWriter, r *http.Request) {
-	userID := chi.URLParam(r, "user_id")
-
-	if userID == "" {
-		http.Error(w, "user ID is required", http.StatusBadRequest)
-		return
-	}
-
+	userID := middleware.GetUserID(r)
 	userDetails, err := db.GetUserDetailsByUserID(userID)
 	if err != nil {
 		if err == sql.ErrNoRows {
