@@ -28,6 +28,10 @@ func Login(w http.ResponseWriter, r *http.Request) {
 
 	err = db.GetUserDetails(&user)
 	if err == sql.ErrNoRows {
+		if user.Role != "employee" {
+			http.Error(w, "user with the given role not exists", http.StatusBadRequest)
+			return
+		}
 		//self create user
 		tx, err := db.DB.Begin()
 		if err != nil {
@@ -89,6 +93,7 @@ func Login(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "failed to encode response", http.StatusInternalServerError)
 	}
 }
+
 func RefreshToken(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		RefreshToken string `json:"refresh_token" validate:"required"`
